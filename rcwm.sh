@@ -42,7 +42,7 @@ else
   HOME_NOTE="${CODEX_HOME:-$HOME/.codex} (the machine's own; its skills are visible to the run)"
 fi
 CODEX_VER=$(codex --version 2>/dev/null | grep -o '[0-9][0-9.]*' | head -1)
-case "$CODEX_VER" in 0.154*) ;; *) echo "note: codex CLI $CODEX_VER; the paper used 0.154 (the runner parses its 'session id' and 'tokens used' lines)";; esac
+case "$CODEX_VER" in 0.153*|0.154*) ;; *) echo "note: codex CLI $CODEX_VER; the paper used 0.153 (0.154 verified compatible); the runner parses its 'session id' and 'tokens used' lines";; esac
 CH="runs/$NAME"; D="$RCWM_ROOT/$CH/fractal/scene"
 [ -e "$D/target.png" ] && { echo "run exists: $RCWM_ROOT/$CH (pick another name, or rerun the runner to resume)"; exit 1; }
 mkdir -p "$D" "$RCWM_ROOT/$CH/trace"

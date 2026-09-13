@@ -28,7 +28,7 @@ The original section numbers are retained so the cross-references still apply.
 - Linux x86_64 (arm64 also works for the runtime; the paper ran on Ubuntu). macOS is untested.
 - Python 3.10–3.12 (a system `python3` with `venv`, or conda/mamba), `curl`, `tar`, `git`. Network access for the install
   and for the model. The install never touches the Python environment you are in (see §3).
-- The OpenAI **Codex CLI**, logged in. Install: `npm install -g @openai/codex` (any Node ≥ 18 on PATH, or the one the setup script installs), then `codex login`. The runner calls `codex exec` once per node and parses its `session id:` and `tokens used` lines; the paper used codex-cli 0.154.
+- The OpenAI **Codex CLI**, logged in. Install: `npm install -g @openai/codex` (any Node ≥ 18 on PATH, or the one the setup script installs), then `codex login`. The runner calls `codex exec` once per node and parses its `session id:` and `tokens used` lines; the paper used codex-cli 0.153.0 (0.154 verified compatible).
 - Model access: an account that can run `gpt-6-astra`. The runner asks for that model at reasoning effort `high` on
   every call (the paper's setting); nothing in `~/.codex/config.toml` needs editing. Another model has to be requested
   explicitly with `RCWM_MODEL` (§6); any model codex can run works mechanically, results depend on the model's eyes.
@@ -179,6 +179,11 @@ credential problem); a run started with `RCWM_CLEAN_CODEX_HOME=0` keeps using th
 **Call tree.** `python3 runner/trace_report.py $RCWM_ROOT/runs/<name>` prints and writes `trace/recursion_report.md`
 (every `solve(node)` with depth, sessions, tokens and stop reason) and `trace/tree.json`.
 
+**What went wrong?** `tools/diagnose_run.sh $RCWM_ROOT/runs/<name>` reads only the run's own files: tree shape and cost,
+every node's delivery and how many renders it made (a node with none worked blind), the stop reasons, and the failure
+signatures in the session logs (Chromium not launching, sandbox denials, full disk, quota, dropped connections). Paste
+its output when asking for help.
+
 **Score.** With the metrics packages installed (`--metrics`), one JSON line with the chosen final render, PSNR / SSIM /
 edge-F1 / LPIPS / CLIP against the reference, nodes, depth, nodes per level, delivered parts, tokens and wall time:
 
@@ -309,7 +314,7 @@ Following §3 and §4 as written reproduces the paper's condition. What the code
 | sandbox | workspace-write, network on, Chromium cache writable | the runner's `codex exec` flags |
 | root brief and environment note | identical text | `rcwm.sh` |
 | runtime | Node 22.14, three 0.160.1, Playwright 1.62.1 with Chromium; Python 3.12 with Pillow 12.3, numpy 2.5 | `setup/setup_runtime.sh` pins them; versions recorded in `conditions.json` |
-| codex CLI | 0.154 | **you**: `rcwm.sh` prints a note if the version differs; the runner parses codex's `session id` and `tokens used` lines |
+| codex CLI | 0.153.0 (0.154 verified compatible) | **you**: `rcwm.sh` prints a note for any other version; the runner parses codex's `session id` and `tokens used` lines |
 | model access | an account that can run `gpt-6-astra` | **you**: `codex login`; a different model must be requested explicitly with `RCWM_MODEL` |
 | reference image | unmodified, at the size given (figure furniture kept) | **you**: pass the file as is |
 | isolation | one workspace per scene, nothing else in it | **you**: `tools/new_workspace.sh` per scene (§7); do not put other material under `$RCWM_ROOT` |

@@ -43,7 +43,7 @@ the paper's final batch was run that way, one workspace per scene, all ten in pa
 
 | piece | version |
 |---|---|
-| executor | `codex` CLI 0.154, model `gpt-6-astra`, reasoning effort `high` (`~/.codex/config.toml`) |
+| executor | `codex` CLI 0.153.0 (0.154 verified compatible), model `gpt-6-astra`, reasoning effort `high` |
 | Python | 3.12.3; Pillow 12.3.0, numpy 2.5.2 |
 | Node.js | 22.14.0; three 0.160.1; Playwright 1.62.1 (Chromium build 1234) |
 | metrics only | torch 2.5.1 (CPU), opencv-python-headless 5.0, scikit-image 0.26, lpips 0.1.4, open_clip_torch 3.3 |

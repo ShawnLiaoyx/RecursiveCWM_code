@@ -26,7 +26,7 @@ RecursiveCWM_code/
     solver-template.md                  English recursive instruction used by default
   runner/
     solve_recursive.sh                  recursive session/child orchestration
-    check_part.py                       structural delivery check
+    check_part.py                       component/module delivery and child-reference checks
     trace_report.py                     trace-to-tree report
   setup/
     setup_runtime.sh                    private Python, Node, three.js, and Chromium installation
@@ -37,6 +37,7 @@ RecursiveCWM_code/
     new_workspace.sh                    workspace sharing an installed runtime
     make_codex_home.sh                  private Codex configuration, login copy, and skill
     resume_run.sh                       interruption recovery entry point
+    diagnose_run.sh                     run-file diagnostics: tree, cost, deliveries, renders, and failures
     score_run.py                        one-run metrics, recursion, and usage report
     view.sh, view_server.mjs             interactive viewer launcher and HTTP server
     render_views.sh                     reference-camera and novel-view render wrapper
@@ -76,6 +77,7 @@ RecursiveCWM_code/
     test_runner_offline.sh             launch contract with a fake Codex executable
     fake-codex/codex                   deterministic root/children/resume stand-in
     test_camera_crop.py                camera-crop homography geometry tests
+    test_check_part.py                 delivery shapes, nested child IDs, paths, and objects
 ```
 
 The solver templates ask each node to compare matched reference/render views, resolve local differences,
@@ -134,8 +136,11 @@ but there is no additional parent session in that invocation. Cycle numbering re
 through a new runner invocation. Sibling parallelism has no separate cap in `solve_recursive.sh`.
 
 The checker accepts a nonempty `components` collection (also as the top-level list), rejecting duplicate
-IDs among dictionary entries, or nonempty string `module` and `export` fields with an existing module path.
-String child references must resolve relative to the node or to a sibling/child `part.json`.
+IDs among dictionary entries, or an existing module path named by `module`, `entry`, `main`, or `file`;
+the `export` symbol is optional. Children may be flat or nested node IDs, relative paths, or objects
+carrying `part`/`path` or `id`/`name`/`node`. Node IDs (and their last path segment) are resolved against
+the run's nearest `fractal/` root, the node's own directory, and its parent; explicit paths are relative
+to the node. Child references must resolve to an existing file or a directory containing `part.json`.
 It does not execute the export, judge image quality, or validate `account.md` and renders.
 `visual_stop` records that the final structural check passed; it is not an independent visual evaluation.
 
@@ -162,7 +167,7 @@ $RCWM_ROOT/runs/<run-name>/
       children.json                     current requested child node names, when present
       children.json.prev                previous request, retained for recovery
       .children_done                    names of children whose part.json exists
-      part.json                         component collection or module/export delivery
+      part.json                         component collection or module delivery (export optional)
       account.md                        solver's account of construction and completion
       index.html, *.js                   solver-generated viewer and scene modules
       final.png                         reference-camera render (actual declared name may differ)
@@ -223,7 +228,7 @@ the trace report then sums that repeated value too. Zero is used only when no us
 |---|---|---|
 | [rcwm.sh](../rcwm.sh) | `<reference.png> <run-name> [max-depth=4] [max-cycles=3]` | Full launch described above. `RCWM_ROOT` defaults to `<repo>/runtime`; `RCWM_PROMPT` overrides the instruction; `RCWM_MODEL` / `RCWM_REASONING` default to `gpt-6-astra` / `high`. `RCWM_CLEAN_CODEX_HOME=0` disables private-home setup; `RCWM_CODEX_CONFIG` supplies a custom config. Incoming `CODEX_HOME` (otherwise `~/.codex`) supplies the login. Exports `RCWM_CODE`, `RCWM_MAXD`, and `RCWM_MAXCYC`; positional depth/cycles replace incoming values of those two variables. |
 | [runner/solve_recursive.sh](../runner/solve_recursive.sh) | `<chain> <node> [parent_id=-] [depth=0] [run_id=r0]` | Chain is relative to `RCWM_ROOT` or absolute. Reads `RCWM_CODE`, `RCWM_ROOT`, `RCWM_MAXD=4`, `RCWM_MAXCYC=3`, `RCWM_PROMPT` (English template by default), `RCWM_MODEL`, `RCWM_REASONING`, `CODEX_HOME`, and `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`). Direct calls do not build a private home. |
-| [runner/check_part.py](../runner/check_part.py) | `<part.json>` | Prints `ok ...` on accepted structure; exits nonzero on failed checks. No custom environment variables. |
+| [runner/check_part.py](../runner/check_part.py) | `<part.json>` | Accepts nonempty component lists with unique IDs or existing `module`/`entry`/`main`/`file` paths with optional `export`. Resolves flat/nested child IDs against the run's `fractal/` root, node directory, and parent; also accepts relative paths and child objects. Prints `ok ...` on accepted structure; exits nonzero on failed checks. No custom environment variables. |
 | [runner/trace_report.py](../runner/trace_report.py) | `<run-dir>` | Reads the trace, writes `trace/tree.json` and `trace/recursion_report.md`, and prints the report. No custom environment variables. |
 | [setup/setup_runtime.sh](../setup/setup_runtime.sh) | `[runtime-root] [--metrics] [--python interpreter] [--conda env-name] [--node-from dir]`; `-h` / `--help` | Default root is `<repo>/runtime` (the positional argument, not `RCWM_ROOT`, selects another location). `PYTHON` supplies the default interpreter; `--python` overrides it. `RCWM_CONDA` selects conda/mamba/micromamba; `RCWM_NODE_VERSION=22.14.0` selects the Node download. `PLAYWRIGHT_BROWSERS_PATH` selects browser storage. Installs private Python packages, Node, three.js/Playwright, Chromium, and runs the smoke test. Existing tools are reused; Python packages are installed on each invocation. |
 | [setup/smoke_test.mjs](../setup/smoke_test.mjs) | `[runtime-root]` | Defaults to `RCWM_ROOT`, then the current directory. Starts a temporary localhost server, renders a 320×200 cube with runtime Playwright, and checks for red pixels with runtime Python/Pillow/numpy. Writes `runs/.smoke/index.html` and `smoke.png`. Playwright uses `PLAYWRIGHT_BROWSERS_PATH`. |
@@ -239,6 +244,7 @@ scikit-image, LPIPS, open_clip, and pytest. The [environment guide](environment.
 | [tools/new_workspace.sh](../tools/new_workspace.sh) | `<workspace-dir> [shared-runtime-root]` | Runtime argument defaults to `RCWM_RUNTIME`, then `<repo>/runtime`. Checks Python/Node, creates `runs/`, and symlinks `.venv` and `.render-tools`. Prints the absolute workspace path. Private Codex home is created later by the launch/home helper. |
 | [tools/make_codex_home.sh](../tools/make_codex_home.sh) | `<workspace-root>` | Existing workspace required. Reads login from `CODEX_HOME` or `~/.codex`, writes `.codex-home` (mode 700) and `auth.json` (600), installs the worldgen skill, and prints the home path. Uses `RCWM_CODEX_CONFIG` or a two-line config from `RCWM_MODEL` / `RCWM_REASONING`. It does not export `CODEX_HOME` into the caller. |
 | [tools/resume_run.sh](../tools/resume_run.sh) | `<run-name>` | Requires `$RCWM_ROOT/runs/<name>/fractal/scene`; exits early if root `part.json` exists, refuses a matching live runner, reuses an existing private home and refreshes its login from incoming `CODEX_HOME` or `~/.codex`. Reads `RCWM_ROOT`, `RCWM_PROMPT`, `RCWM_MAXD`, `RCWM_MAXCYC`; runner inherits model/effort and browser settings. Reuse the original settings: it does not load them from `conditions.json`. |
+| [tools/diagnose_run.sh](../tools/diagnose_run.sh) | `<run-dir>` | Reads only the run's own files, with no model or network calls. Prints recorded conditions, tree depth/counts, sessions, tokens, wall time, stop reasons, delivered/missing parts, PNG render counts, and log failure signatures (Chromium, sandbox, disk, quota, connections, Python imports, three.js). Lists logs without a session ID and the root log header, then points to the root render and target. Requires `fractal/` and `python3`; no custom environment variables. |
 | [tools/score_run.py](../tools/score_run.py) | `<scene-name> <run-dir> [label]` | Label defaults to the run directory's basename. Uses `RCWM_REFS` (default checked-in pilot scenes), `RCWM_ROOT` (otherwise inferred from run path), and optional `RCWM_SCORES` JSONL append destination. Sets `RCWM_OURS_CHAIN` to the supplied run before importing pickers. For a final render and existing reference, runs metrics with the same Python interpreter. Writes/prints `trace/score.json`: render/finality, metrics, nodes/depth/per-level counts, parts, tokens in millions, and wall minutes. Tokens come from all node logs; wall time is first-to-last trace event. |
 | [tools/view.sh](../tools/view.sh) | `<run-dir-or-workspace-root> [port=8000] [host=127.0.0.1]` | A run is recognized by `fractal/scene`; its workspace is inferred two directories above. `RCWM_ROOT_OVERRIDE` overrides that inference (needed for deeper layouts such as matrix runs). Uses runtime Node, falling back to `node` on PATH; executes `view_server.mjs`. |
 | [tools/view_server.mjs](../tools/view_server.mjs) | `<workspace-root> [--port N] [--host address]` | Direct invocation uses `RCWM_VIEW_PORT`, otherwise port 0 (OS-selected); explicit `--port` wins. Host defaults to localhost. Serves the workspace, hooks served three.js, and injects OrbitControls into HTML under `runs/`. Prints root viewer URLs for immediate children of `runs/`; deeper pages can be opened by their URL. `?clean=1` hides viewer overlays. Does not rewrite delivered files. |
@@ -374,6 +380,7 @@ These wrappers do not install their external checkouts or implement the main ent
 | [tests/test_runner_offline.sh](../tests/test_runner_offline.sh) | `[runtime-root]`, default `RCWM_ROOT` then `<repo>/runtime` | Creates a temporary workspace under `TMPDIR` (default `/tmp`) using the installed Python/Node paths, installs a fake login and fake Codex on PATH, then launches `rcwm.sh`. Checks private-home contents, recorded model/effort/hash, two child deliveries, root resume, trace event presence, tree size/depth, and structural delivery. Prints `offline runner test ok (...)` and removes the workspace on success; preserves it on failure. No model call. |
 | [tests/fake-codex/codex](../tests/fake-codex/codex) | Test stand-in for `codex --version` and `codex exec ... [resume <sid> <message>]` | Parses the runner's `--cd`, config/sandbox options, and task/resume text. Creates two fixed child nodes for the initial root call, delivers child modules, then delivers the root on resume. Emits synthetic session IDs and usage text; it does not perform scene reconstruction or validate every forwarded flag. |
 | [tests/test_camera_crop.py](../tests/test_camera_crop.py) | Collected by `python -m pytest tests/` | Two numpy geometry tests: crop homography projection consistency and focal-length scaling. No custom environment variables or standalone CLI. |
+| [tests/test_check_part.py](../tests/test_check_part.py) | Collected by `python -m pytest tests/` | Six tests invoke the checker in a subprocess against temporary deliveries: module/export, entry without export, component lists and duplicate IDs, flat/nested child IDs, path/object children, and missing children/modules or empty deliveries. No custom environment variables or standalone CLI. |
 
-Run the offline test and geometry tests as shown in the [operating guide](usage.md#14-tests).
+Run the offline, geometry, and delivery-check tests as shown in the [operating guide](usage.md#14-tests).
 The [smoke renderer](../setup/smoke_test.mjs) checks the actual Chromium/three.js/Python rendering path separately.

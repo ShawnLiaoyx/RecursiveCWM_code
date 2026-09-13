@@ -15,7 +15,7 @@ Following [§3](usage.md#3-install) and [§4](usage.md#4-run-one-scene) as writt
 | sandbox | workspace-write, network on, Chromium cache writable | the runner's `codex exec` flags |
 | root brief and environment note | identical text | `rcwm.sh` |
 | runtime | Node 22.14, three 0.160.1, Playwright 1.62.1 with Chromium; Python 3.12 with Pillow 12.3, numpy 2.5 | `setup/setup_runtime.sh` pins them; versions recorded in `conditions.json` |
-| codex CLI | 0.154 | **you**: `rcwm.sh` prints a note if the version differs; the runner parses codex's `session id` and `tokens used` lines |
+| codex CLI | 0.153.0 (0.154 verified compatible) | **you**: `rcwm.sh` prints a note for any other version; the runner parses codex's `session id` and `tokens used` lines |
 | model access | an account that can run `gpt-6-astra` | **you**: `codex login`; a different model must be requested explicitly with `RCWM_MODEL` |
 | reference image | unmodified, at the size given (figure furniture kept) | **you**: pass the file as is |
 | isolation | one workspace per scene, nothing else in it | **you**: `tools/new_workspace.sh` per scene ([§7](usage.md#7-several-scenes-in-parallel-isolated)); do not put other material under `$RCWM_ROOT` |
