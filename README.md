@@ -7,6 +7,9 @@
   <a href="https://arxiv.org/html/2609.11499v1"><strong>arXiv HTML</strong></a>
 </p>
 
+> **Status:** This release is still being tested and completed and may be unstable in places.
+> You are welcome to try it and send feedback and suggestions through GitHub issues.
+
 ![Recursive Code World Models teaser](https://zhiqili-cg.github.io/RecursiveCWM/images/teaser.webp)
 
 One reference image in, one executable parameterized 3D scene program (three.js) out.
