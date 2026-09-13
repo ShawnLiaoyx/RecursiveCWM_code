@@ -1,6 +1,6 @@
 # Complete operating guide
 
-[Project front page](../README.md) · [中文操作指南](usage_zh.md) · [Code structure](code-structure.md)
+[Project front page](../README.md) · [Code structure](code-structure.md)
 
 Commands below run from the repository root unless a command changes directory.
 The original section numbers are retained so the cross-references still apply.
@@ -11,7 +11,7 @@ The original section numbers are retained so the cross-references still apply.
 3. [Install](#3-install)
 4. [Run one scene](#4-run-one-scene)
 5. [What a run produces](#5-what-a-run-produces)
-6. [Options: depth, language, instruction, private codex home](#6-options)
+6. [Options: depth, instruction, private codex home](#6-options)
 7. [Several scenes in parallel, isolated](#7-several-scenes-in-parallel-isolated)
 8. [Resume after an interruption](#8-resume-after-an-interruption)
 9. [Inspect a run: call tree, score, interactive 3D view, high-resolution and novel-view renders](#9-inspect-a-run)
@@ -133,9 +133,8 @@ The trace's `stop_reason` is `visual_stop` (the node judged the level done), `no
 | what | how |
 |---|---|
 | depth and cycles | `./rcwm.sh ref.png name 4 3` (positional: max depth, max cycles per node; defaults 4 and 3, the paper's values). `RCWM_MAXD` / `RCWM_MAXCYC` when calling the runner directly |
-| Chinese instruction and skill | `RCWM_LANG=zh` (uses `solver/solver-template.zh.md` and `SKILL.zh.md`; the runner's resume messages stay English, the max-depth note follows the instruction's language) |
 | your own instruction | `RCWM_PROMPT=/path/to/instruction.md` (placeholders `__NODE__`, `__CHAIN__`, `__DEPTH__` are substituted; the trace records the file's hash) |
-| codex home | private by default (see §4); `RCWM_CLEAN_CODEX_HOME=0` for the machine's own. To build a private home yourself: `tools/make_codex_home.sh $RCWM_ROOT [en\|zh]` and launch with `CODEX_HOME=$RCWM_ROOT/.codex-home` |
+| codex home | private by default (see §4); `RCWM_CLEAN_CODEX_HOME=0` for the machine's own. To build a private home yourself: `tools/make_codex_home.sh $RCWM_ROOT` and launch with `CODEX_HOME=$RCWM_ROOT/.codex-home` |
 | model / reasoning effort | `RCWM_MODEL` / `RCWM_REASONING` (default `gpt-6-astra` / `high`, the paper's). The runner passes both to every codex call, so `~/.codex/config.toml` cannot change them |
 | custom model provider | `RCWM_CODEX_CONFIG=/path/config.toml` puts that file in the private home instead of the two-line paper config (for an API endpoint of your own; keep `model`/`model_reasoning_effort` out of it or in agreement) |
 | Chromium location | `PLAYWRIGHT_BROWSERS_PATH` (the runner makes it writable for codex) |
@@ -168,7 +167,7 @@ If the machine, the shell or the model's quota stopped a run, resume it in place
 RCWM_ROOT=/work/rcwm/shop-row tools/resume_run.sh shop-row
 ```
 
-The root runner is re-invoked with the same instruction (`RCWM_PROMPT` / `RCWM_LANG` / `RCWM_MAXD` / `RCWM_MAXCYC` must
+The root runner is re-invoked with the same instruction (`RCWM_PROMPT` / `RCWM_MAXD` / `RCWM_MAXCYC` must
 match the original launch; the defaults match `rcwm.sh`'s defaults). Every node continues its own codex session by its
 `.sid`. A node that had asked for children of which some never delivered relaunches only those (trace event
 `recover_children`) instead of waking the parent with an incomplete set. If the run used a private codex home, it is
@@ -315,7 +314,7 @@ Following §3 and §4 as written reproduces the paper's condition. What the code
 | reference image | unmodified, at the size given (figure furniture kept) | **you**: pass the file as is |
 | isolation | one workspace per scene, nothing else in it | **you**: `tools/new_workspace.sh` per scene (§7); do not put other material under `$RCWM_ROOT` |
 
-Anything you change on purpose (`RCWM_MODEL`, `RCWM_REASONING`, `RCWM_PROMPT`, `RCWM_LANG=zh`, `RCWM_CLEAN_CODEX_HOME=0`,
+Anything you change on purpose (`RCWM_MODEL`, `RCWM_REASONING`, `RCWM_PROMPT`, `RCWM_CLEAN_CODEX_HOME=0`,
 `RCWM_CODEX_CONFIG`) is written to `runs/<name>/conditions.json`, so a run always carries the record of how it differs.
 `tests/test_runner_offline.sh` checks the enforced rows with a fake codex (§14).
 
@@ -345,8 +344,6 @@ $RCWM_ROOT/.render-tools/node/bin/node setup/smoke_test.mjs $RCWM_ROOT   # the r
   expression as the fourth argument, or lower `RCWM_READY_TIMEOUT_MS`.
 - **`pickers.ours` warns "no recognised final render name".** The node delivered but named its render unusually; look in
   `fractal/scene/`, then pass it with `RCWM_OURS_OVERRIDE=scene=/path.png` or add the name to `part.json`'s `evidence.final_render`.
-- **Chinese runs with the English skill (or the reverse).** Use `RCWM_LANG=zh` (the skill copied into the private home
-  follows it), or `tools/make_codex_home.sh $RCWM_ROOT zh` when launching the runner directly.
 - **The solver behaves differently on another machine.** Compare `runs/<name>/conditions.json` with the table in §13:
   the instruction hash, model, effort, codex home and versions are all there. `codex home: … the machine's own` means the
   run was started with `RCWM_CLEAN_CODEX_HOME=0` and sees that machine's skills.

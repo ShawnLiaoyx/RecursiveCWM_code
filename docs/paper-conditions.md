@@ -20,7 +20,7 @@ Following [§3](usage.md#3-install) and [§4](usage.md#4-run-one-scene) as writt
 | reference image | unmodified, at the size given (figure furniture kept) | **you**: pass the file as is |
 | isolation | one workspace per scene, nothing else in it | **you**: `tools/new_workspace.sh` per scene ([§7](usage.md#7-several-scenes-in-parallel-isolated)); do not put other material under `$RCWM_ROOT` |
 
-Anything you change on purpose (`RCWM_MODEL`, `RCWM_REASONING`, `RCWM_PROMPT`, `RCWM_LANG=zh`, `RCWM_CLEAN_CODEX_HOME=0`,
+Anything you change on purpose (`RCWM_MODEL`, `RCWM_REASONING`, `RCWM_PROMPT`, `RCWM_CLEAN_CODEX_HOME=0`,
 `RCWM_CODEX_CONFIG`) is written to `runs/<name>/conditions.json`, so a run always carries the record of how it differs.
 `tests/test_runner_offline.sh` checks the enforced rows with a fake codex ([§14](usage.md#14-tests)).
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""新视角网格图:每景一行 = 参考相机成品 + 五个新视角(±35°、高轨、两处特写),等高排列,列内居中对齐。
-用法: make_novel_views.py <out.png>"""
+"""Novel-view grid: one row per scene = final reference-camera render + five novel views (+/-35 degrees, high orbit, two close-ups), at equal height and centered within columns.
+Usage: make_novel_views.py <out.png>"""
 import sys, os, glob
 def _env(name, hint):
     v=os.environ.get(name)

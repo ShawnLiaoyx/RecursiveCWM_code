@@ -1,9 +1,9 @@
 #!/bin/bash
-# img2threejs 原生基线,隔离工作区版(用户 2026-09-09 裁定):
-#   每景一个独立目录 $RCWM_I2T_ISO/<scene>/,里面只有 img2threejs 的拷贝、参考图、渲染工具位置说明;
-#   codex 的 cwd 就是这个目录,看不到我们的 runs/;提示词只说"按它自家规程做",不提场景/单物体,不给任何额外辅助。
-#   唯一允许的干预:它的门禁拒收/硬停之后,续同一会话强行让它做完(第二段),仍不给提示。
-# 用法: run_img2threejs.sh <scene> <reference.png>
+# Native img2threejs baseline with isolated workspaces (user decision, 2026-09-09):
+#   Each scene has its own $RCWM_I2T_ISO/<scene>/ directory containing only an img2threejs copy, reference image, and rendering tool locations.
+#   codex runs in that directory without access to our runs/; the prompt only says to follow the project's own procedure, with no scene/single-object framing or extra assistance.
+#   The only allowed intervention: after a quality-gate rejection or hard stop, resume the same session and require completion (stage two), still without hints.
+# Usage: run_img2threejs.sh <scene> <reference.png>
 set -uo pipefail
 SC="$1"; REF="${2:?reference png}"
 ROOT="${RCWM_ROOT:?set RCWM_ROOT (runtime root, see docs/environment.md)}"
@@ -23,16 +23,16 @@ Work only inside this directory.
 E
 (
   cd "$D"
-  # 第一段:原生
-  codex exec --skip-git-repo-check --cd "$D" --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
-    "按 ./img2threejs 项目自己的规程工作(先读 img2threejs/CLAUDE.md、SKILL.md 与 grimoire/),把 ./reference.png 重建为 code-only 的 Three.js 程序,全部产物写在当前目录,工具位置见 ./ENVIRONMENT.md。按该项目自身的流程与质量门走,完成即结束。" \
+  # Stage one: native flow. Preserve the paper's baseline prompt verbatim.
+  # Translation: Follow the ./img2threejs project's own procedure (first read img2threejs/CLAUDE.md, SKILL.md, and grimoire/). Reconstruct ./reference.png as a code-only Three.js program, write all outputs in the current directory, and see ./ENVIRONMENT.md for tool locations. Follow the project's own workflow and quality gates; stop when complete.
+  codex exec --skip-git-repo-check --cd "$D" --sandbox workspace-write -c sandbox_workspace_write.network_access=true "按 ./img2threejs 项目自己的规程工作(先读 img2threejs/CLAUDE.md、SKILL.md 与 grimoire/),把 ./reference.png 重建为 code-only 的 Three.js 程序,全部产物写在当前目录,工具位置见 ./ENVIRONMENT.md。按该项目自身的流程与质量门走,完成即结束。" \
     < /dev/null > codex-run.log 2>&1
   echo "STAGE1_DONE $(date -Is)" >> stages.log
   if ! ls final-render.png render-hires.png >/dev/null 2>&1; then
-    # 第二段:门禁拒了/停了 → 强行做完(不给提示)
+    # Stage two: quality-gate rejection/stop -> require completion (without hints).
     SID=$(grep -a -m1 'session id' codex-run.log | awk '{print $3}')
-    codex exec --skip-git-repo-check --cd "$D" --sandbox workspace-write -c sandbox_workspace_write.network_access=true \
-      resume "$SID" "不接受停止。强行继续,把 ./reference.png 重建为 code-only 的 Three.js 程序,交付从参考相机渲染的 final-render.png,完成即结束。" \
+    # Translation: Stopping is not acceptable. Continue regardless, reconstruct ./reference.png as a code-only Three.js program, deliver final-render.png rendered from the reference camera, and stop when complete.
+    codex exec --skip-git-repo-check --cd "$D" --sandbox workspace-write -c sandbox_workspace_write.network_access=true resume "$SID" "不接受停止。强行继续,把 ./reference.png 重建为 code-only 的 Three.js 程序,交付从参考相机渲染的 final-render.png,完成即结束。" \
       < /dev/null >> codex-run.log 2>&1
     echo "STAGE2_DONE $(date -Is)" >> stages.log
   fi

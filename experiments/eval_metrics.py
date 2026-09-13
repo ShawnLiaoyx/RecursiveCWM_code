@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""案例对比指标:eval_metrics.py <reference.png> <render.png> [--json out]
-机器可算的全套;缺库的项自动跳过并标 null。所有分数只作报告,不作任何门。
+"""Case-comparison metrics: eval_metrics.py <reference.png> <render.png> [--json out]
+Full set of computable metrics; automatically skip metrics with missing dependencies and mark them null. All scores are for reporting only, never gates.
 """
 import argparse, json, math, sys
 import numpy as np
@@ -30,7 +30,7 @@ def tile_scores(a, b, fn, grid=4):
 
 
 def palette_metrics(a, b, k=6):
-    """参考主色是否被渲染以相近比例复现(色觉覆盖)。"""
+    """Whether the render reproduces the reference's dominant colors in similar proportions (perceptual color coverage)."""
     def key_colors(img):
         q = (img * 255 // 32).astype(int)
         flat = q.reshape(-1, 3)
@@ -70,7 +70,7 @@ def main():
         out['ssim_tile_mean'], out['ssim_tile_worst'] = round(m, 4), round(w, 4)
     except Exception:
         out['ssim'] = None
-    try:  # 边缘结构 F1(Canny 重叠,3px 容差)
+    try:  # Edge-structure F1 (Canny overlap, 3px tolerance).
         import cv2
         ea = cv2.Canny((a * 255).astype(np.uint8), 80, 160) > 0
         eb = cv2.Canny((b * 255).astype(np.uint8), 80, 160) > 0
@@ -82,14 +82,14 @@ def main():
         out['edge_f1'] = round(2 * prec * rec / max(prec + rec, 1e-9), 4)
     except Exception:
         out['edge_f1'] = None
-    try:  # 颜色直方图 EMD(每通道 1D Wasserstein 平均)
+    try:  # Color-histogram EMD (mean per-channel 1D Wasserstein distance).
         from scipy.stats import wasserstein_distance
         d = [wasserstein_distance(a[..., c].ravel(), b[..., c].ravel()) for c in range(3)]
         out['color_emd'] = round(float(np.mean(d)), 5)
     except Exception:
         out['color_emd'] = None
     out['palette_coverage'], out['palette_prop_err'] = [round(v, 4) for v in palette_metrics(a, b)]
-    try:  # 细部裁片:确定性网格取 8 个 2x 放大窗的 SSIM/LPIPS
+    try:  # Detail crops: SSIM/LPIPS for eight 2x zoom windows on a deterministic grid.
         from skimage.metrics import structural_similarity as ssim
         H, W = a.shape[:2]
         rng = [(i, j) for i in (0.15, 0.45, 0.7) for j in (0.15, 0.45, 0.7)][:args.crops]

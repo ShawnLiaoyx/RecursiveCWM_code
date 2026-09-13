@@ -1,6 +1,6 @@
 #!/bin/bash
-# 统一递归求解运行器:solve(node) 可生 solve(child),事件由运行器记录
-# 用法: solve_recursive.sh <chain> <node> <parent_id|-> <depth> <run_id>
+# Unified recursive solver runner: solve(node) can spawn solve(child); the runner records events.
+# Usage: solve_recursive.sh <chain> <node> <parent_id|-> <depth> <run_id>
 set -uo pipefail
 # RCWM_CODE = this repo; RCWM_ROOT = runtime root (see docs/environment.md), default <repo>/runtime
 CODE="${RCWM_CODE:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -23,11 +23,11 @@ log_ev() { # type cycle extra_json
 ' "{\"run_id\":\"$RUN\",\"node_id\":\"$NODE\",\"parent_id\":\"$PARENT\",\"depth\":$DEPTH,\"cycle\":$2,\"event\":\"$1\",\"ts\":\"$(date -Is)\",\"solver_hash\":\"$TPLH\",\"camera_hash\":\"$CAMH\",\"parent_snapshot\":\"$SNAP\"$3}" >> "$EV"
 }
 
-usage_delta() { # 最近一次 tokens used(codex 把数字印在同一行或下一行)
+usage_delta() { # Most recent tokens used (codex prints the number on the same line or the next).
   grep -a -A1 "tokens used" "$ND/codex-run.log" 2>/dev/null | grep -o "[0-9][0-9,]*" | tail -1 | tr -d ','
 }
 
-# manifest:接口版本(继承的上下文)
+# manifest: interface version (inherited context)
 [ -f "$ND/manifest.json" ] || cat > "$ND/manifest.json" <<M
 {"interface_version":1,"reference_sha256":"$( [ -f "$ND/target.png" ] && sha256sum "$ND/target.png" | cut -c1-12 || echo pending)","camera_hash":"$CAMH","parent_snapshot":"$SNAP","solver_hash":"$TPLH"}
 M
@@ -50,8 +50,7 @@ while [ "$CYC" -le "$MAXCYC" ]; do
       "$PROMPT" > "$ND/task.md"
   # At the maximum depth the runner will not launch children; the node must know, or it keeps writing children.json and never delivers.
   if [ "$DEPTH" -ge "$MAXD" ]; then
-    if grep -q '[一-龥]' "$PROMPT"; then MAXNOTE="本层深度已到上限:运行器不会再执行孩子,不要写 children.json;把本层自己做完,交付 part.json。"
-    else MAXNOTE="This level is at the maximum depth: the runner will not launch children, so do not write children.json; finish this level yourself and deliver part.json."; fi
+    MAXNOTE="This level is at the maximum depth: the runner will not launch children, so do not write children.json; finish this level yourself and deliver part.json."
     printf '\n%s\n' "$MAXNOTE" >> "$ND/task.md"
   else MAXNOTE=""; fi
   if [ -f "$ND/.sid" ] && grep -q "[0-9a-f]" "$ND/.sid"; then
@@ -73,7 +72,7 @@ while [ "$CYC" -le "$MAXCYC" ]; do
   log_ev "session_end" "$CYC" ",\"usage_total\":$U"
   fi   # end of the codex call skipped by recovery
 
-  # 孩子请求?
+  # Children requested?
   KIDS=$([ -f "$ND/children.json" ] && python3 -c "import json;print(' '.join(json.load(open('$ND/children.json'))))" 2>/dev/null || echo "")
   if [ -n "$KIDS" ] && [ "$DEPTH" -lt "$MAXD" ]; then   # an empty list means "no children": finish, don't resume
     PIDS=""
@@ -95,7 +94,7 @@ while [ "$CYC" -le "$MAXCYC" ]; do
   break
 done
 
-# 运行器级交付校验(只查机器可判事实,不设仪式)
+# Runner-level delivery validation (only machine-checkable facts, no procedural formalities).
 REASON="visual_stop"
 if [ -f "$ND/part.json" ]; then
   python3 "$CODE"/runner/check_part.py "$ND/part.json" || REASON="invalid_artifact"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""主表:runs/pilot/metrics/all-methods-full.csv → runs/pilot/metrics/casemetrics-table.tex,并换进论文 04_experiments.tex(RCWM_PAPER)。
-每景每指标最优加粗;final=False 的行打 †;Tokens 列按用户要求暂不放。"""
+"""Main table: runs/pilot/metrics/all-methods-full.csv -> runs/pilot/metrics/casemetrics-table.tex; also replace it in the paper's 04_experiments.tex (RCWM_PAPER).
+Bold the best value per scene and metric; mark final=False rows with a dagger; omit the Tokens column for now at the user's request."""
 import csv, collections, re, sys
 from pathlib import Path
 import os
@@ -14,7 +14,7 @@ PAPER=None if NO_PAPER else Path(_env('RCWM_PAPER','paper repo checkout whose se
 WHOLE=['city-full','snow-village','island-harbor','medieval-village','japan-island']
 CROPS=['school-block','police-corner','park-lake','shop-row','valley-village']
 NAME={'ours':'Ours','seig':'SEIG','viga':'VIGA','img2threejs':'img2threejs'}
-rows=[r for r in csv.DictReader(open(CSV)) if r.get('psnr') and r.get('final')=='True']  # 正式稿只放已收官的运行
+rows=[r for r in csv.DictReader(open(CSV)) if r.get('psnr') and r.get('final')=='True']  # Include only finished runs in the final paper.
 by=collections.defaultdict(dict)
 for r in rows: by[r['scene']][r['method']]=r
 def emit(scenes):

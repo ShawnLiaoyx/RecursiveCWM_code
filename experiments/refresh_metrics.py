@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""按 pickers 统一选图重算全表:runs/pilot/metrics/all-methods-full.csv(记录 render 路径与 final 标志)"""
+"""Recompute the full table using shared pickers selection: runs/pilot/metrics/all-methods-full.csv (record render paths and final flags)."""
 import sys, os, csv, json, subprocess
 def _env(name, hint):
     v=os.environ.get(name)

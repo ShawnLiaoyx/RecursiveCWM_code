@@ -6,7 +6,6 @@
   <a href="https://zhiqili-cg.github.io/RecursiveCWM/"><strong>Project Page</strong></a> ·
   <a href="https://arxiv.org/html/2609.11499v1"><strong>arXiv HTML</strong></a>
 </p>
-<p align="center"><a href="README_zh.md">中文说明</a></p>
 
 ![Recursive Code World Models teaser](https://zhiqili-cg.github.io/RecursiveCWM/images/teaser.webp)
 
@@ -47,7 +46,7 @@ After the run finishes, open the URL printed by `tools/view.sh`; drag to orbit, 
 
 ## Documentation
 
-[Complete operating guide](docs/usage.md) · [中文操作指南](docs/usage_zh.md)
+[Complete operating guide](docs/usage.md)
 
 [Code structure and script reference](docs/code-structure.md)
 

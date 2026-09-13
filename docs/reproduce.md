@@ -73,7 +73,7 @@ The matrix driver calls the recursive runner directly. To give a matrix the priv
 paper, prepare it before launching the matrix (after logging in):
 
 ```bash
-tools/make_codex_home.sh "$RCWM_ROOT" en
+tools/make_codex_home.sh "$RCWM_ROOT"
 export CODEX_HOME="$RCWM_ROOT/.codex-home"
 ```
 

@@ -80,7 +80,7 @@ def native_detail(im,transform,box,size,trim=False):
     return ImageOps.fit(patch,size,method=Image.Resampling.LANCZOS,centering=(0.5,0.5))
 SPEC={'city-full':[0.40,0.32,0.26,0.22,0.18,0.16],'medieval-village':[0.50,0.40,0.32,0.26,0.20,0.16],'japan-island':[0.55,0.55,0.38,0.38]}
 SPEC_OURS=[0.5,0.42,0.34,0.34]   # reference-vs-ours figures: four windows, side by side under the two big views
-FINAL_ONLY=True  # 正式稿:未收官的方法留白,不打 *,不写 pending
+FINAL_ONLY=True  # Final paper: leave unfinished methods blank, without * or pending labels.
 OVERRIDE=dict(kv.split('=',1) for kv in os.environ.get('RCWM_OURS_OVERRIDE','').split(',') if '=' in kv)  # 'scene=/path/render.png': force the Ours render used in that scene's figure
 def load(SC,name,fn):
     if fn is None: return Image.open(f'{C}/{SC}.png').convert('RGB'),True
@@ -103,7 +103,7 @@ def one_scene(SC,out,PAD=10,LBL=66,GUT=84,PANELS=PANELS,CW=760,WSL=None,RH=None)
     edges=cv2.Canny(refnp,80,160)>0
     reff=refnp.astype(float)/255; ourf=aligned.get('Ours'); ourf=ourf.astype(float)/255 if ourf is not None else None
     blf=[aligned[k].astype(float)/255 for k in aligned if k not in ('Reference','Ours')]
-    rects=[]  # (fx,fy,WS);窗心两两至少错开 0.4*大窗边,拉近的窗不与大窗同心
+    rects=[]  # (fx,fy,WS); keep window centers at least 0.4 * the large window side apart; zoomed windows must not share its center.
     def far(fx,fy,WS):
         return all(abs(fx+WS/2-(a+w/2))>=0.4*max(WS,w) or abs(fy+WS/2-(b+w/2))>=0.4*max(WS,w) for a,b,w in rects)
     for WS in WSL:

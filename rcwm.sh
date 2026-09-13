@@ -6,8 +6,7 @@
 #
 # Needs: codex CLI logged in; a runtime root (env RCWM_ROOT, default <repo>/runtime) built by
 # setup/setup_runtime.sh (.venv with Pillow/numpy, .render-tools with node+three+playwright).
-# Env: RCWM_LANG=zh            Chinese instruction + Chinese skill (default en)
-#      RCWM_PROMPT=<file>      a different instruction file (default solver/solver-template[.zh].md)
+# Env: RCWM_PROMPT=<file>      a different instruction file (default solver/solver-template.md)
 #      RCWM_MODEL / RCWM_REASONING   executor (default gpt-6-astra / high, the paper's; passed to every codex call)
 #      RCWM_CLEAN_CODEX_HOME=0 use the machine's own codex home (~/.codex: its skills, memories, AGENTS.md) instead of the
 #                              default private home under $RCWM_ROOT/.codex-home (two-line config + login + only this repo's skill)
@@ -18,7 +17,7 @@ NAME="${2:?usage: rcwm.sh <reference.png> <run-name> [max-depth=4] [max-cycles=3
 export RCWM_MAXD="${3:-4}" RCWM_MAXCYC="${4:-3}"
 export RCWM_CODE="$(cd "$(dirname "$0")" && pwd)"
 export RCWM_ROOT="${RCWM_ROOT:-$RCWM_CODE/runtime}"
-export RCWM_PROMPT="${RCWM_PROMPT:-$RCWM_CODE/solver/solver-template$( [ "${RCWM_LANG:-en}" = zh ] && echo .zh ).md}"
+export RCWM_PROMPT="${RCWM_PROMPT:-$RCWM_CODE/solver/solver-template.md}"
 [ -d "$RCWM_ROOT" ] || { echo "RCWM_ROOT=$RCWM_ROOT does not exist; build it with setup/setup_runtime.sh (see docs/environment.md)"; exit 1; }
 [ -x "$RCWM_ROOT/.render-tools/node/bin/node" ] && [ -x "$RCWM_ROOT/.venv/bin/python" ] || { echo "RCWM_ROOT=$RCWM_ROOT is not a runtime root (no .render-tools/node or .venv); run setup/setup_runtime.sh $RCWM_ROOT"; exit 1; }
 [ -f "$RCWM_PROMPT" ] || { echo "instruction file not found: $RCWM_PROMPT"; exit 1; }
@@ -36,8 +35,7 @@ if [ "${RCWM_CLEAN_CODEX_HOME:-1}" != "0" ]; then
   [ -f "$SRC/auth.json" ] && cp "$SRC/auth.json" "$CH/" && chmod 600 "$CH/auth.json"
   [ -f "$CH/auth.json" ] || { echo "no codex login found at $SRC/auth.json (run 'codex login' first)"; exit 1; }
   rm -rf "$CH/skills/worldgen-techniques" && mkdir -p "$CH/skills/worldgen-techniques"
-  if [ "${RCWM_LANG:-en}" = zh ]; then cp "$RCWM_CODE/skills/worldgen-techniques/SKILL.zh.md" "$CH/skills/worldgen-techniques/SKILL.md"
-  else cp "$RCWM_CODE/skills/worldgen-techniques/SKILL.md" "$CH/skills/worldgen-techniques/SKILL.md"; fi
+  cp "$RCWM_CODE/skills/worldgen-techniques/SKILL.md" "$CH/skills/worldgen-techniques/SKILL.md"
   export CODEX_HOME="$CH"
   HOME_NOTE="private ($CH); skills: $(ls "$CH/skills" | tr '\n' ' ')"
 else
@@ -68,7 +66,7 @@ def pkg(name):
 d={"run":"$RCWM_ROOT/$CH","reference":"$REF","instruction":"$RCWM_PROMPT",
    "instruction_sha256":hashlib.sha256(open("$RCWM_PROMPT","rb").read()).hexdigest()[:12],
    "max_depth":int("$RCWM_MAXD"),"max_cycles":int("$RCWM_MAXCYC"),"model":"$RCWM_MODEL","reasoning_effort":"$RCWM_REASONING",
-   "codex_cli":"$CODEX_VER","codex_home":"$HOME_NOTE","language":"${RCWM_LANG:-en}",
+   "codex_cli":"$CODEX_VER","codex_home":"$HOME_NOTE",
    "node":v(["$NODEBIN","--version"]),"three":pkg("three"),"playwright":pkg("playwright"),
    "python":v(["$RCWM_ROOT/.venv/bin/python","--version"]),"code_commit":v(["git","-C","$RCWM_CODE","rev-parse","--short","HEAD"])}
 json.dump(d,open(sys.argv[1],"w"),indent=1)

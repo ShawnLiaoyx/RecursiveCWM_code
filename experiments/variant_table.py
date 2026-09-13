@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""结构消融表:每条 <scene>-<variant>-r1 链取成品渲染算指标,从 trace/events.jsonl 取用量与墙钟。
-输出 runs/pilot/metrics/variants.csv 与 variants-table.tex(RCWM_VARIANTS_TEX,默认 runs/pilot/metrics/)。"""
+"""Structural ablation table: compute metrics from each <scene>-<variant>-r1 chain's final render, with usage and wall time from trace/events.jsonl.
+Write runs/pilot/metrics/variants.csv and variants-table.tex (RCWM_VARIANTS_TEX, default runs/pilot/metrics/)."""
 import sys, os, csv, json, glob, subprocess, datetime, collections
 def _env(name, hint):
     v=os.environ.get(name)
@@ -9,11 +9,11 @@ def _env(name, hint):
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import pickers
 ROOT=_env('RCWM_ROOT','runtime root that holds runs/ (see docs/environment.md)'); C=os.environ.get('RCWM_REFS', os.path.join(os.path.dirname(os.path.abspath(__file__)),'pilot-scenes'))  # all ten reference images (see pilot-scenes/REFERENCES.md)
 SCENES=['school-block','medieval-village']
-SHOW_COST=False  # 用户 2026-09-09:Cost/Time 两列先隐藏(数据仍写进 variants.csv)
+SHOW_COST=False  # User request, 2026-09-09: hide Cost/Time columns for now (still write data to variants.csv).
 VARS=[('flat','Flat + zoom'),('localglobal',r'Local $\rightarrow$ global'),('globallocal',r'Global $\rightarrow$ local'),('twolevel',r'\textbf{Recursive, fixed 2-level}'),('recursive',r'\textbf{Recursive, free depth}')]
 def pick(chain):
     d=f'{chain}/fractal/scene'
-    # 先信 part.json 自报的成品渲染路径
+    # Trust the final-render path declared in part.json first.
     try:
         ev=json.load(open(f'{d}/part.json')).get('evidence',{})
         for k in ('final_render','render','final'):
@@ -24,7 +24,7 @@ def pick(chain):
         if os.path.isfile(f'{d}/{n}') and pickers._img_ok(f'{d}/{n}'): return f'{d}/{n}'
     return pickers.newest([f'{d}/round*[0-9].png',f'{d}/assembled*[0-9].png',f'{d}/handoff.png',f'{d}/blockout*.png',f'{d}/evidence/integrated*[0-9].png'])
 def tokens_from_logs(chain):
-    """codex 在 'tokens used' 的同一行或下一行打印用量;逐节点日志累加。"""
+    """codex prints usage on the 'tokens used' line or the next; sum it across node logs."""
     import re, glob as g
     tot=0
     for f in g.glob(f'{chain}/fractal/*/codex-run.log'):
@@ -37,9 +37,9 @@ def tokens_from_logs(chain):
 def trace(chain):
     ev=[]
     for l in open(f'{chain}/trace/events.jsonl'):
-        try: ev.append(json.loads(l.replace('"usage_total":}','"usage_total":0}')))  # 旧运行器在用量为空时写坏了这一字段
-        except Exception: pass  # 交错写坏的行只跳过
-    # 时间=有会话在跑的墙钟并集(去掉配额中断/人工重启造成的空档,保留并行收益)
+        try: ev.append(json.loads(l.replace('"usage_total":}','"usage_total":0}')))  # The old runner corrupted this field when usage was empty.
+        except Exception: pass  # Skip lines corrupted by interleaved writes.
+    # Time = union of wall-clock intervals with active sessions (exclude gaps from quota interruptions/manual restarts, preserving parallelism benefits).
     open_=collections.defaultdict(list); iv=[]
     for e in ev:
         ts=datetime.datetime.fromisoformat(e['ts'])
@@ -71,7 +71,7 @@ with open(f'{ROOT}/runs/pilot/metrics/variants.csv','w',newline='') as f:
     w=csv.DictWriter(f,fieldnames=list(rows[0].keys())); w.writeheader(); w.writerows(rows)
 def fmt(v,f):
     return '--' if v in (None,'') else f%float(v)
-for r in rows:  # 正式稿:未收官的行不放数,也不参与加粗(csv 里仍保留)
+for r in rows:  # Final paper: leave unfinished rows blank and exclude them from bolding (retain them in CSV).
     if not r['final']: r.update({'psnr':None,'ssim':None,'detail_ssim':None,'lpips':None})
 L=[]
 for SC in SCENES:

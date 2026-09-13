@@ -12,19 +12,18 @@ square brackets for optional arguments; replace those placeholders when running 
 
 ```text
 RecursiveCWM_code/
-  README.md, README_zh.md                English and Chinese project front pages
+  README.md                             project front page
   LICENSE                               MIT license for the code
   .gitignore                            excludes runtime tools, runs, caches, logs, and private Codex homes
   rcwm.sh                               single-scene entry point
   docs/
-    usage.md, usage_zh.md                complete operating guides
+    usage.md                            complete operating guide
     code-structure.md                   this source map and interface reference
     environment.md                      runtime layout and paper versions
     paper-conditions.md                 conditions checklist and recorded run numbers
     reproduce.md                        table, figure, baseline, and ablation workflow
   solver/
     solver-template.md                  English recursive instruction used by default
-    solver-template.zh.md               Chinese recursive instruction
   runner/
     solve_recursive.sh                  recursive session/child orchestration
     check_part.py                       structural delivery check
@@ -72,7 +71,7 @@ RecursiveCWM_code/
       run_viga.sh                      separate VIGA checkout and model shim
       run_img2threejs.sh                per-scene isolated img2threejs copy
   skills/worldgen-techniques/
-    SKILL.md, SKILL.zh.md               English/Chinese terrain and scene-building toolbox
+    SKILL.md                           terrain and scene-building toolbox
   tests/
     test_runner_offline.sh             launch contract with a fake Codex executable
     fake-codex/codex                   deterministic root/children/resume stand-in
@@ -179,7 +178,7 @@ the matrix calls the runner directly and does not write that file. Camera, progr
 files depend on solver delivery; tree and score files depend on running the corresponding report tools.
 
 `conditions.json` contains `run`, `reference`, `instruction`, `instruction_sha256` (12 hex characters),
-`max_depth`, `max_cycles`, `model`, `reasoning_effort`, `codex_cli`, `codex_home`, `language`, `node`,
+`max_depth`, `max_cycles`, `model`, `reasoning_effort`, `codex_cli`, `codex_home`, `node`,
 `three`, `playwright`, `python`, and `code_commit`. Version probes may be empty or null when unavailable.
 `manifest.json` contains `interface_version: 1`, `reference_sha256` (12 hex characters or `pending`),
 `camera_hash`, `parent_snapshot`, and `solver_hash`. It is created once and reused on subsequent invocations.
@@ -222,8 +221,8 @@ the trace report then sums that repeated value too. Zero is used only when no us
 
 | Script | Arguments | Behavior and environment |
 |---|---|---|
-| [rcwm.sh](../rcwm.sh) | `<reference.png> <run-name> [max-depth=4] [max-cycles=3]` | Full launch described above. `RCWM_ROOT` defaults to `<repo>/runtime`; `RCWM_LANG` defaults to `en` (`zh` selects Chinese instruction and skill); `RCWM_PROMPT` overrides the instruction; `RCWM_MODEL` / `RCWM_REASONING` default to `gpt-6-astra` / `high`. `RCWM_CLEAN_CODEX_HOME=0` disables private-home setup; `RCWM_CODEX_CONFIG` supplies a custom config. Incoming `CODEX_HOME` (otherwise `~/.codex`) supplies the login. Exports `RCWM_CODE`, `RCWM_MAXD`, and `RCWM_MAXCYC`; positional depth/cycles replace incoming values of those two variables. |
-| [runner/solve_recursive.sh](../runner/solve_recursive.sh) | `<chain> <node> [parent_id=-] [depth=0] [run_id=r0]` | Chain is relative to `RCWM_ROOT` or absolute. Reads `RCWM_CODE`, `RCWM_ROOT`, `RCWM_MAXD=4`, `RCWM_MAXCYC=3`, `RCWM_PROMPT` (English template by default), `RCWM_MODEL`, `RCWM_REASONING`, `CODEX_HOME`, and `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`). Direct calls do not select a Chinese template from `RCWM_LANG` or build a private home. |
+| [rcwm.sh](../rcwm.sh) | `<reference.png> <run-name> [max-depth=4] [max-cycles=3]` | Full launch described above. `RCWM_ROOT` defaults to `<repo>/runtime`; `RCWM_PROMPT` overrides the instruction; `RCWM_MODEL` / `RCWM_REASONING` default to `gpt-6-astra` / `high`. `RCWM_CLEAN_CODEX_HOME=0` disables private-home setup; `RCWM_CODEX_CONFIG` supplies a custom config. Incoming `CODEX_HOME` (otherwise `~/.codex`) supplies the login. Exports `RCWM_CODE`, `RCWM_MAXD`, and `RCWM_MAXCYC`; positional depth/cycles replace incoming values of those two variables. |
+| [runner/solve_recursive.sh](../runner/solve_recursive.sh) | `<chain> <node> [parent_id=-] [depth=0] [run_id=r0]` | Chain is relative to `RCWM_ROOT` or absolute. Reads `RCWM_CODE`, `RCWM_ROOT`, `RCWM_MAXD=4`, `RCWM_MAXCYC=3`, `RCWM_PROMPT` (English template by default), `RCWM_MODEL`, `RCWM_REASONING`, `CODEX_HOME`, and `PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`). Direct calls do not build a private home. |
 | [runner/check_part.py](../runner/check_part.py) | `<part.json>` | Prints `ok ...` on accepted structure; exits nonzero on failed checks. No custom environment variables. |
 | [runner/trace_report.py](../runner/trace_report.py) | `<run-dir>` | Reads the trace, writes `trace/tree.json` and `trace/recursion_report.md`, and prints the report. No custom environment variables. |
 | [setup/setup_runtime.sh](../setup/setup_runtime.sh) | `[runtime-root] [--metrics] [--python interpreter] [--conda env-name] [--node-from dir]`; `-h` / `--help` | Default root is `<repo>/runtime` (the positional argument, not `RCWM_ROOT`, selects another location). `PYTHON` supplies the default interpreter; `--python` overrides it. `RCWM_CONDA` selects conda/mamba/micromamba; `RCWM_NODE_VERSION=22.14.0` selects the Node download. `PLAYWRIGHT_BROWSERS_PATH` selects browser storage. Installs private Python packages, Node, three.js/Playwright, Chromium, and runs the smoke test. Existing tools are reused; Python packages are installed on each invocation. |
@@ -238,8 +237,8 @@ scikit-image, LPIPS, open_clip, and pytest. The [environment guide](environment.
 | Script | Arguments | Behavior and environment |
 |---|---|---|
 | [tools/new_workspace.sh](../tools/new_workspace.sh) | `<workspace-dir> [shared-runtime-root]` | Runtime argument defaults to `RCWM_RUNTIME`, then `<repo>/runtime`. Checks Python/Node, creates `runs/`, and symlinks `.venv` and `.render-tools`. Prints the absolute workspace path. Private Codex home is created later by the launch/home helper. |
-| [tools/make_codex_home.sh](../tools/make_codex_home.sh) | `<workspace-root> [en\|zh]` | Existing workspace required; language defaults to English. Reads login from `CODEX_HOME` or `~/.codex`, writes `.codex-home` (mode 700) and `auth.json` (600), installs the selected worldgen skill, and prints the home path. Uses `RCWM_CODEX_CONFIG` or a two-line config from `RCWM_MODEL` / `RCWM_REASONING`. It does not export `CODEX_HOME` into the caller. |
-| [tools/resume_run.sh](../tools/resume_run.sh) | `<run-name>` | Requires `$RCWM_ROOT/runs/<name>/fractal/scene`; exits early if root `part.json` exists, refuses a matching live runner, reuses an existing private home and refreshes its login from incoming `CODEX_HOME` or `~/.codex`. Reads `RCWM_ROOT`, `RCWM_LANG`, `RCWM_PROMPT`, `RCWM_MAXD`, `RCWM_MAXCYC`; runner inherits model/effort and browser settings. Reuse the original settings: it does not load them from `conditions.json`. |
+| [tools/make_codex_home.sh](../tools/make_codex_home.sh) | `<workspace-root>` | Existing workspace required. Reads login from `CODEX_HOME` or `~/.codex`, writes `.codex-home` (mode 700) and `auth.json` (600), installs the worldgen skill, and prints the home path. Uses `RCWM_CODEX_CONFIG` or a two-line config from `RCWM_MODEL` / `RCWM_REASONING`. It does not export `CODEX_HOME` into the caller. |
+| [tools/resume_run.sh](../tools/resume_run.sh) | `<run-name>` | Requires `$RCWM_ROOT/runs/<name>/fractal/scene`; exits early if root `part.json` exists, refuses a matching live runner, reuses an existing private home and refreshes its login from incoming `CODEX_HOME` or `~/.codex`. Reads `RCWM_ROOT`, `RCWM_PROMPT`, `RCWM_MAXD`, `RCWM_MAXCYC`; runner inherits model/effort and browser settings. Reuse the original settings: it does not load them from `conditions.json`. |
 | [tools/score_run.py](../tools/score_run.py) | `<scene-name> <run-dir> [label]` | Label defaults to the run directory's basename. Uses `RCWM_REFS` (default checked-in pilot scenes), `RCWM_ROOT` (otherwise inferred from run path), and optional `RCWM_SCORES` JSONL append destination. Sets `RCWM_OURS_CHAIN` to the supplied run before importing pickers. For a final render and existing reference, runs metrics with the same Python interpreter. Writes/prints `trace/score.json`: render/finality, metrics, nodes/depth/per-level counts, parts, tokens in millions, and wall minutes. Tokens come from all node logs; wall time is first-to-last trace event. |
 | [tools/view.sh](../tools/view.sh) | `<run-dir-or-workspace-root> [port=8000] [host=127.0.0.1]` | A run is recognized by `fractal/scene`; its workspace is inferred two directories above. `RCWM_ROOT_OVERRIDE` overrides that inference (needed for deeper layouts such as matrix runs). Uses runtime Node, falling back to `node` on PATH; executes `view_server.mjs`. |
 | [tools/view_server.mjs](../tools/view_server.mjs) | `<workspace-root> [--port N] [--host address]` | Direct invocation uses `RCWM_VIEW_PORT`, otherwise port 0 (OS-selected); explicit `--port` wins. Host defaults to localhost. Serves the workspace, hooks served three.js, and injects OrbitControls into HTML under `runs/`. Prints root viewer URLs for immediate children of `runs/`; deeper pages can be opened by their URL. `?clean=1` hides viewer overlays. Does not rewrite delivered files. |
