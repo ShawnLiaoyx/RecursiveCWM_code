@@ -39,6 +39,7 @@ After the run finishes, open the URL printed by `tools/view.sh`; drag to orbit, 
 ## 🚧 TODO
 
 - [ ] Windows support (currently Linux only: bash runner and Playwright/Chromium paths)
+- [ ] Complete code review
 - [ ] Prompt and skill optimization
 - [ ] Efficiency (tokens, wall-clock, parallelism)
 - [ ] Complete evaluation across models and reasoning efforts
