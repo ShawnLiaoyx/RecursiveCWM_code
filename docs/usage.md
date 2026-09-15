@@ -59,12 +59,14 @@ every script calls `$RCWM_ROOT/.venv/bin/python` by path.
 | you use | do this | what you get |
 |---|---|---|
 | a system Python | `bash setup/setup_runtime.sh /path/to/rcwm-runtime` | a venv at `$RCWM_ROOT/.venv` made from `python3.12` when available, otherwise `python3` (`--python /path/to/python3.12` to choose the interpreter) |
-| conda / mamba / micromamba | `bash setup/setup_runtime.sh /path/to/rcwm-runtime --conda rcwm` | a dedicated conda env `rcwm` (created with `python=3.12` if it does not exist), linked as `$RCWM_ROOT/.venv`; the pinned packages go into that env only |
+| conda / mamba / micromamba | `bash setup/setup_runtime.sh /path/to/rcwm-runtime --conda rcwm` | a private venv at `$RCWM_ROOT/.venv`, created using Python from conda env `rcwm` (created with `python=3.12` if missing); packages already in the conda env are excluded |
 
-If a conda `base` environment is active in your shell, use `--conda` (or `--python /usr/bin/python3.12`) rather than the
-default, so the venv is not built on top of `base` and no package lands in it. `--metrics` installs the torch/opencv/
-scikit-image/lpips/open_clip pins into the same private environment, not into yours; if you already have a conda env
-with compatible versions, point `--conda` at it. `RCWM_CONDA=/path/to/conda` names the binary when it is not on PATH.
+`--conda` supplies an interpreter for the private venv, even when a conda `base` environment is active.
+`--metrics` installs the torch/opencv/scipy/scikit-image/lpips/open_clip pins and their dependencies into that venv.
+`RCWM_CONDA=/path/to/conda` names the binary when it is not on PATH. Setup isolates Python/pip from inherited
+package paths and pip configuration. If an old venv has conflicting packages, rerun with `--recreate-venv`
+(and `--metrics` for evaluation); the old venv is backed up and rebuilt. Old direct conda links migrate
+automatically. See [dependency recovery](environment.md#dependency-conflicts-and-recovery).
 Chromium's browser files go to `$PLAYWRIGHT_BROWSERS_PATH` (default `~/.cache/ms-playwright`); set that variable before
 the script and before every launch if you want them elsewhere.
 

@@ -12,8 +12,9 @@ $RCWM_ROOT/
 ```
 
 `setup/setup_runtime.sh <dir>` builds exactly this (plus a smoke render) without touching the Python environment you
-are in: `.venv` is a private venv made from `python3.12` when available, otherwise `python3` (`--python <interpreter>` to choose), or, with `--conda <env>`, a
-symlink to a dedicated conda env (created with python=3.12 if missing). Add `--metrics` to also install the packages the
+are in: `.venv` is always a private venv. It is made from `python3.12` when available, otherwise
+`python3` (`--python <interpreter>` to choose). With `--conda <env>`, conda supplies Python 3.12
+(creating the named environment if missing); its installed packages are excluded from the venv. Add `--metrics` to also install the packages the
 record-only metrics, tables and figures need (torch CPU, opencv, scikit-image, lpips, open_clip); those are never seen
 by the solver. `--node-from <dir>` symlinks an existing Node.js installation instead of downloading one.
 
@@ -37,7 +38,7 @@ Nothing else is required: the scene programs the solver writes import three.js d
 The supported interpreter for both the runtime and `--metrics` is **CPython 3.12.x**.
 [`.python-version`](../.python-version) is the setup script's source of truth for the version check,
 default interpreter lookup, and new conda environments. Any 3.12 patch release is accepted.
-The pins remain the paper's versions:
+The original package pins retain the paper's versions; SciPy is now explicitly pinned for the color metric:
 
 | Package | Python constraint for the pinned release |
 |---|---|
@@ -54,20 +55,36 @@ together and runs `pip check` before installing the rendering tools.
 
 For a new venv, setup honors `--python`, then `PYTHON`; otherwise it tries `python3.12` on PATH,
 then checks `python3`. With `--conda`, it creates a missing environment with Python 3.12 or validates
-the existing one before linking it. An incompatible interpreter fails before packages are installed.
+the existing one before using its interpreter to create the venv. An incompatible interpreter fails before packages are installed.
 
-**Recovering from an earlier failed setup:** an existing `.venv` is reused and checked, even if
-`--python` is supplied. Choose a fresh runtime directory or move the old `.venv` aside first, then run:
+### Dependency conflicts and recovery
+
+Setup uses Python's isolated mode and ignores pip configuration/environment overrides so that user-site
+packages, `PYTHONPATH`, `PIP_TARGET`, `PIP_USER`, or `PIP_NO_DEPS` cannot redirect the install or skip dependencies.
+The metrics requirements include the base runtime pins and explicitly require SciPy. All selected packages
+are resolved together, followed by `pip check` and import checks before rendering setup.
+
+Warnings about `cmapy`, `kaolin`, or `kappamodules` indicate other packages visible in the environment;
+this repository does not depend on them. Use a private venv for this project. Only the headless OpenCV
+distribution is installed here; adding `opencv-python` alongside it would put two packages in charge of `cv2`.
+
+**Recovering from an earlier failed setup:** use `--recreate-venv` to back up the old `.venv` under
+`$RCWM_ROOT/.venv-backup.XXXXXX/.venv`, create a fresh environment, and reinstall the selected dependencies:
 
 ```bash
-bash setup/setup_runtime.sh "$RCWM_ROOT" --python /path/to/python3.12
-# Or let conda/mamba create a dedicated Python 3.12 environment:
-bash setup/setup_runtime.sh "$RCWM_ROOT" --conda rcwm-py312
+bash setup/setup_runtime.sh "$RCWM_ROOT" --conda rcwm-py312 --recreate-venv --metrics
+# Or use an installed Python 3.12:
+bash setup/setup_runtime.sh "$RCWM_ROOT" --python /path/to/python3.12 --recreate-venv --metrics
 ```
 
-Moving a `.venv` symlink leaves its original conda environment intact. An existing conda environment
-with the wrong Python version is rejected; choose a new environment name. Setup does not change its
-Python version automatically.
+Omit `--metrics` if you only need the solver. Existing runs and rendering tools are kept. The backup is for
+recovery, not for execution at its moved path. Old `.venv` symlinks pointing directly to conda environments
+are migrated automatically: the link is backed up, and the original conda environment is left intact.
+Keep the source Python/conda environment installed, since the private venv uses its interpreter.
+
+Without `--recreate-venv`, an existing private venv is reused and checked; `--python`/`--conda` select the
+interpreter used to create a new one. An existing conda environment with the wrong Python version is
+rejected; choose a new environment name. Setup does not change its Python version automatically.
 
 ## One runtime, many isolated workspaces
 
