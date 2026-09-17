@@ -170,5 +170,253 @@ class MonitorTests(unittest.TestCase):
             sleeper.wait(timeout=5)
 
 
+    def fake_host(self):
+        (self.root / 'stat').write_text('cpu 10 0 10 80 0 0 0 0 0 0\n')
+        (self.root / 'meminfo').write_text('MemTotal: 2048 kB\nMemAvailable: 1024 kB\n'
+                                           'SwapTotal: 1024 kB\nSwapFree: 512 kB\n')
+        (self.root / 'loadavg').write_text('0.5 0.2 0.1 1/10 123\n')
+
+    def test_resource_failure_is_null_and_recovers_without_cpu_spike(self):
+        self.fake_host()
+        resource = monitor.Resources(proc=self.root)
+        self.assertIsNone(resource.sample(1)['host_cpu_busy_pct'])
+        (self.root / 'stat').unlink()
+        failed = resource.sample(2)
+        self.assertIsNone(failed['host_cpu_busy_pct'])
+        self.assertEqual(failed['host_memory_available_mib'], 1)
+        self.assertEqual(len(resource.errors), 1)
+        (self.root / 'stat').write_text('cpu 1000 0 1000 8000 0 0 0 0\n')
+        self.assertIsNone(resource.sample(3)['host_cpu_busy_pct'])
+        (self.root / 'stat').write_text('cpu 1010 0 1010 8080 0 0 0 0\n')
+        self.assertEqual(resource.sample(4)['host_cpu_busy_pct'], 20)
+        self.assertEqual(resource.errors, [])
+
+    def test_missing_memory_and_bad_load_do_not_hide_cpu(self):
+        self.fake_host()
+        resource = monitor.Resources(proc=self.root)
+        resource.sample(1)
+        (self.root / 'meminfo').write_text('unexpected\n')
+        (self.root / 'loadavg').write_text('nan\n')
+        (self.root / 'stat').write_text('cpu 20 0 20 160 0 0 0 0\n')
+        result = resource.sample(2)
+        self.assertEqual(result['host_cpu_busy_pct'], 20)
+        self.assertIsNone(result['host_memory_total_mib'])
+        self.assertIsNone(result['host_load1'])
+        self.assertEqual(len(resource.errors), 2)
+
+    def test_pid_reuse_does_not_inherit_old_cpu_counters(self):
+        self.fake_host()
+        resource = monitor.Resources(pid=123, proc=self.root)
+        old = {(123, 100): dict(ticks=10, rss_pages=1)}
+        reused = {(123, 200): dict(ticks=50000, rss_pages=1)}
+        with patch.object(monitor, 'process_tree', side_effect=[old, reused]):
+            resource.sample(1)
+            self.assertEqual(resource.sample(2)['process_cpu_pct'], 0)
+
+    def test_unreadable_pid_is_not_reported_as_idle(self):
+        self.fake_host()
+        resource = monitor.Resources(pid=123, proc=self.root)
+        with patch.object(monitor, 'process_stat', side_effect=PermissionError('denied')):
+            result = resource.sample(1)
+        self.assertIsNone(result['process_cpu_pct'])
+        self.assertIsNone(result['process_count'])
+        self.assertTrue(resource.errors)
+
+    def test_trace_rotation_and_temporary_disappearance(self):
+        path = self.root / 'events.jsonl'
+        path.write_text(self.event('session_start', 'old'))
+        tail = monitor.TraceTail()
+        self.assertEqual(tail.poll(path)['session_starts'], 1)
+        path.rename(self.root / 'events.old')
+        self.assertIsNone(tail.poll(path))
+        path.write_text(self.event('session_start', 'new') + self.event('session_end', 'new'))
+        result = tail.poll(path)
+        self.assertEqual(result['session_starts'], 1)
+        self.assertEqual(result['active_sessions'], 0)
+
+    def test_oversize_and_deeply_nested_trace_records_are_skipped(self):
+        path = self.root / 'events.jsonl'
+        path.write_text('x' * 300 + '\n' + self.event('session_start'))
+        tail = monitor.TraceTail()
+        with patch.object(monitor, 'READ_LIMIT', 100):
+            for _ in range(5):
+                result = tail.poll(path)
+        self.assertEqual(result['session_starts'], 1)
+        with path.open('a') as stream:
+            stream.write('[' * 2000 + '0' + ']' * 2000 + '\n' + self.event('session_end'))
+        result = tail.poll(path)
+        self.assertEqual(result['active_sessions'], 0)
+        self.assertGreaterEqual(result['malformed_lines'], 2)
+
+    @unittest.skipUnless(hasattr(__import__('os'), 'mkfifo'), 'POSIX only')
+    def test_fifo_does_not_block_trace_poll(self):
+        import os
+        path = self.root / 'events.jsonl'
+        os.mkfifo(path)
+        self.assertIsNone(monitor.TraceTail().poll(path))
+
+    def test_report_tolerates_valid_json_with_wrong_shapes(self):
+        path = self.root / 'damaged.jsonl'
+        path.write_text('[]\nnull\n{"type":"sample"}\n'
+                        '{"type":"sample","elapsed_seconds":NaN,"interval_seconds":1,"resources":{}}\n'
+                        '{"type":"sample","elapsed_seconds":2,"interval_seconds":1,'
+                        '"resources":{"host_load1":null,"bad":"string","bad2":Infinity},"runs":{"a":null}}\n')
+        report = monitor.render_report(path)
+        self.assertIn('Samples: 1;', report)
+        self.assertIn('Skipped malformed/incomplete records: 4', report)
+        self.assertNotIn('| bad', report)
+
+    @unittest.skipUnless(Path('/proc/stat').exists(), 'Linux only')
+    def test_sampling_error_still_writes_report(self):
+        from argparse import Namespace
+        log = self.root / 'failure.jsonl'
+        args = Namespace(target=self.root, pid=None, output=log, interval=0.01, duration=1)
+        with patch.object(monitor.signal, 'signal'), \
+             patch.object(monitor.Resources, 'sample', side_effect=OSError('injected read failure')):
+            with self.assertRaises(OSError):
+                monitor.watch(args)
+        self.assertIn('monitor error', log.with_suffix('.md').read_text())
+        self.assertEqual(json.loads(log.read_text().splitlines()[-1])['type'], 'end')
+
+    @unittest.skipUnless(Path('/proc/stat').exists(), 'Linux only')
+    def test_failed_log_write_preserves_prior_records_and_report(self):
+        from argparse import Namespace
+        import errno
+        log = self.root / 'write-failure.jsonl'
+        args = Namespace(target=self.root, pid=None, output=log, interval=0.01, duration=1)
+        original_open = Path.open
+
+        class FailingWriter:
+            def __init__(self, stream):
+                self.stream = stream
+                self.writes = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.stream.close()
+
+            def write(self, value):
+                self.writes += 1
+                if self.writes > 2:
+                    raise OSError(errno.ENOSPC, 'injected full disk')
+                return self.stream.write(value)
+
+        def open_file(path, *args, **kwargs):
+            stream = original_open(path, *args, **kwargs)
+            return FailingWriter(stream) if path == log and args and args[0] == 'x' else stream
+
+        with patch.object(monitor.signal, 'signal'), patch.object(Path, 'open', open_file):
+            with self.assertRaises(OSError):
+                monitor.watch(args)
+        self.assertEqual(len(log.read_text().splitlines()), 2)
+        self.assertIn('Samples: 1;', log.with_suffix('.md').read_text())
+
+    @unittest.skipUnless(Path('/proc/stat').exists(), 'Linux only')
+    def test_four_sequential_runs_with_parallel_children(self):
+        batch_code = r'''
+import json, pathlib, subprocess, sys, time
+root = pathlib.Path(sys.argv[1])
+while not (root / 'go').exists():
+    time.sleep(0.01)
+for name in ('medieval-r1', 'medieval-r2', 'city-r1', 'city-r2'):
+    trace = root / name / 'runs' / name / 'trace/events.jsonl'
+    trace.parent.mkdir(parents=True)
+    def emit(kind, node='scene', **extra):
+        line = json.dumps(dict(event=kind, node_id=node, **extra)) + '\n'
+        with trace.open('a') as stream:
+            stream.write(line[:12]); stream.flush(); time.sleep(0.005)
+            stream.write(line[12:])
+    emit('session_start')
+    emit('session_end')
+    emit('session_start', 'a')
+    emit('session_start', 'b')
+    children = [subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(0.12)']) for _ in range(2)]
+    for child in children:
+        child.wait()
+    emit('session_end', 'a')
+    emit('session_end', 'b')
+    emit('session_start')
+    emit('session_end')
+    emit('stop', parent_id='-', depth=0)
+'''
+        batch = subprocess.Popen([sys.executable, '-c', batch_code, str(self.root)])
+        log = self.root / 'four-runs.jsonl'
+        watcher = subprocess.Popen([sys.executable, str(SCRIPT), 'watch', str(self.root),
+                                    '--pid', str(batch.pid), '--interval', '0.02', '--output', str(log)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            deadline = time.monotonic() + 5
+            while not log.exists() and watcher.poll() is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(log.exists())
+            (self.root / 'go').touch()
+            batch.wait(timeout=10)
+            _, stderr = watcher.communicate(timeout=10)
+            self.assertEqual(batch.returncode, 0)
+            self.assertEqual(watcher.returncode, 0, stderr)
+            rows = [json.loads(line) for line in log.read_text().splitlines()]
+            samples = [row for row in rows if row['type'] == 'sample']
+            self.assertEqual(len(samples[-1]['runs']), 4)
+            for state in samples[-1]['runs'].values():
+                self.assertEqual((state['session_starts'], state['session_ends']), (4, 4))
+                self.assertEqual(state['trace_peak_active'], 2)
+                self.assertEqual(state['active_sessions'], 0)
+                self.assertTrue(state['root_stopped'])
+                self.assertEqual(state['malformed_lines'], 0)
+            self.assertEqual(rows[-1]['reason'], 'watched process exited')
+            self.assertTrue(log.with_suffix('.md').exists())
+        finally:
+            for process in (batch, watcher):
+                if process.poll() is None:
+                    process.kill()
+            batch.wait()
+            watcher.communicate()
+
+
+    @unittest.skipUnless(Path('/proc/stat').exists(), 'Linux only')
+    def test_watch_retries_unreadable_pid_then_detects_reuse(self):
+        from argparse import Namespace
+        log = self.root / 'pid-reuse.jsonl'
+        args = Namespace(target=self.root, pid=123, output=log, interval=0.001, duration=1)
+        identity = dict(start=100, state='S')
+        with patch.object(monitor.signal, 'signal'), patch.object(monitor, 'Resources') as resources, \
+             patch.object(monitor, 'process_stat', side_effect=[
+                 identity, PermissionError('temporary'), identity, dict(start=200, state='S')]):
+            resources.return_value.sample.return_value = {}
+            resources.return_value.errors = []
+            monitor.watch(args)
+        rows = [json.loads(line) for line in log.read_text().splitlines()]
+        samples = [row for row in rows if row['type'] == 'sample']
+        self.assertEqual(len(samples), 3)
+        self.assertIn('temporarily unreadable', samples[0]['warnings'][0])
+        self.assertEqual(rows[-1]['reason'], 'watched process exited')
+
+    @unittest.skipUnless(Path('/proc/stat').exists(), 'Linux only')
+    def test_report_survives_monitor_sigkill(self):
+        log = self.root / 'killed.jsonl'
+        watcher = subprocess.Popen([sys.executable, str(SCRIPT), 'watch', str(self.root),
+                                    '--output', str(log)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if log.exists() and len(log.read_text().splitlines()) >= 2:
+                    break
+                time.sleep(0.01)
+            self.assertTrue(log.exists())
+            watcher.kill()
+            watcher.communicate(timeout=5)
+            result = subprocess.run([sys.executable, str(SCRIPT), 'report', str(log)],
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('Samples: 1;', result.stdout)
+            self.assertIn('interrupted without a final record', result.stdout)
+        finally:
+            if watcher.poll() is None:
+                watcher.kill()
+            watcher.communicate()
+
+
 if __name__ == '__main__':
     unittest.main()

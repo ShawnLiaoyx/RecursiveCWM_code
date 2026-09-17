@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 import signal
 import sys
-import threading
+import stat
 import time
 
 
@@ -27,6 +27,7 @@ class TraceTail:
         self.identity = None
         self.offset = 0
         self.pending = b''
+        self.discard_line = False
         self.active = set()
         self.starts = self.ends = self.peak = self.malformed = 0
         self.last_event = None
@@ -34,35 +35,43 @@ class TraceTail:
 
     def poll(self, path):
         try:
-            with path.open('rb') as stream:
-                stat = os.fstat(stream.fileno())
-                identity = (stat.st_dev, stat.st_ino)
-                if self.identity != identity or stat.st_size < self.offset:
+            # Nonblocking open plus a regular-file check avoids hanging on a stray FIFO.
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+            with os.fdopen(fd, 'rb') as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    return None
+                identity = (info.st_dev, info.st_ino)
+                if self.identity != identity or info.st_size < self.offset:
                     self.__init__()
                     self.identity = identity
                 stream.seek(self.offset)
                 chunk = stream.read(READ_LIMIT)
                 self.offset = stream.tell()
-                backlog = max(0, stat.st_size - self.offset)
+                backlog = max(0, info.st_size - self.offset)
         except OSError:
             return None
+        if self.discard_line:
+            _, separator, chunk = chunk.partition(b'\n')
+            self.discard_line = not bool(separator)
         lines = (self.pending + chunk).split(b'\n')
         self.pending = lines.pop()
         # Bound memory even for a corrupt trace with no newline.
         if len(self.pending) > READ_LIMIT:
             self.pending = b''
+            self.discard_line = True
             self.malformed += 1
         for line in lines:
             try:
                 event = json.loads(line)
                 node = event['node_id']
                 kind = event['event']
-                if not isinstance(node, str):
+                if not isinstance(node, str) or not isinstance(kind, str):
                     raise ValueError('invalid node')
-            except (ValueError, KeyError, TypeError):
+            except (ValueError, KeyError, TypeError, RecursionError):
                 self.malformed += 1
                 continue
-            self.last_event = event.get('ts')
+            self.last_event = event.get('ts') if isinstance(event.get('ts'), str) else None
             if kind == 'session_start':
                 self.active.add(node)
                 self.starts += 1
@@ -93,13 +102,17 @@ def trace_paths(target):
     return sorted(paths)
 
 
-def process_stat(pid, proc=Path('/proc')):
+def process_stat(pid, proc=Path('/proc'), strict=False):
     try:
         raw = (proc / str(pid) / 'stat').read_text()
         fields = raw[raw.rfind(')') + 2:].split()
         return dict(state=fields[0], ticks=int(fields[11]) + int(fields[12]),
                     start=int(fields[19]), rss_pages=int(fields[21]))
+    except (FileNotFoundError, ProcessLookupError):
+        return None
     except (OSError, ValueError, IndexError):
+        if strict:
+            raise
         return None
 
 
@@ -128,7 +141,7 @@ def cpu_delta(previous, current):
     # /proc/stat guest times are already included in user/nice; exclude duplicates.
     deltas = [max(0, b - a) for a, b in zip(previous[:8], current[:8])]
     total = sum(deltas)
-    if not total:
+    if len(deltas) < 5 or not total:
         return None, None
     return (100 * (total - deltas[3] - deltas[4]) / total,
             100 * deltas[4] / total)
@@ -144,30 +157,62 @@ class Resources:
         self.page_size = os.sysconf('SC_PAGE_SIZE')
 
     def sample(self, now):
-        cpu = list(map(int, (self.proc / 'stat').read_text().splitlines()[0].split()[1:]))
-        busy, wait = cpu_delta(self.previous_cpu, cpu) if self.previous_cpu else (None, None)
-        self.previous_cpu = cpu
-        mem = {}
-        for line in (self.proc / 'meminfo').read_text().splitlines():
-            key, value = line.split(':', 1)
-            mem[key] = int(value.split()[0])
-        result = dict(host_cpu_busy_pct=busy, host_cpu_iowait_pct=wait,
-                      host_load1=float((self.proc / 'loadavg').read_text().split()[0]),
-                      host_memory_total_mib=mem['MemTotal'] / 1024,
-                      host_memory_available_mib=mem.get('MemAvailable', mem['MemFree']) / 1024,
-                      host_swap_used_mib=(mem['SwapTotal'] - mem['SwapFree']) / 1024)
+        result = dict.fromkeys(('host_cpu_busy_pct', 'host_cpu_iowait_pct', 'host_load1',
+                                'host_memory_total_mib', 'host_memory_available_mib',
+                                'host_swap_used_mib'))
+        self.errors = []
+        try:
+            cpu = list(map(int, (self.proc / 'stat').read_text().splitlines()[0].split()[1:]))
+            if len(cpu) < 5:
+                raise ValueError('incomplete CPU counters')
+            if self.previous_cpu is not None:
+                result['host_cpu_busy_pct'], result['host_cpu_iowait_pct'] = cpu_delta(self.previous_cpu, cpu)
+            self.previous_cpu = cpu
+        except (OSError, ValueError, IndexError) as error:
+            self.previous_cpu = None  # A later sample must not attribute a gap to one interval.
+            self.errors.append(f'host CPU: {error}')
+        try:
+            mem = {}
+            for line in (self.proc / 'meminfo').read_text().splitlines():
+                key, value = line.split(':', 1)
+                mem[key] = int(value.split()[0])
+            result.update(host_memory_total_mib=mem['MemTotal'] / 1024,
+                          host_memory_available_mib=(mem['MemAvailable'] if 'MemAvailable' in mem
+                                                     else mem['MemFree']) / 1024,
+                          host_swap_used_mib=(mem['SwapTotal'] - mem['SwapFree']) / 1024)
+        except (OSError, ValueError, KeyError, IndexError) as error:
+            self.errors.append(f'host memory: {error}')
+        try:
+            value = float((self.proc / 'loadavg').read_text().split()[0])
+            if not math.isfinite(value):
+                raise ValueError('nonfinite load')
+            result['host_load1'] = value
+        except (OSError, ValueError, IndexError) as error:
+            self.errors.append(f'host load: {error}')
         if self.pid is not None:
+            result.update(process_count=None, process_cpu_pct=None, process_rss_sum_mib=None)
+            try:
+                process_stat(self.pid, self.proc, strict=True)
+            except (OSError, ValueError, IndexError) as error:
+                self.errors.append(f'process tree: {error}')
+                self.previous_tree = {}
+                self.previous_time = now
+                return result
             tree = process_tree(self.pid, self.proc, exclude=os.getpid())
             elapsed = now - self.previous_time if self.previous_time is not None else 0
             ticks = sum(max(0, value['ticks'] - self.previous_tree[key]['ticks'])
                         for key, value in tree.items() if key in self.previous_tree)
             result.update(process_count=len(tree),
-                          process_cpu_pct=100 * ticks / self.hz / elapsed if elapsed else None,
+                          process_cpu_pct=100 * ticks / self.hz / elapsed if elapsed > 0 else None,
                           process_rss_sum_mib=sum(x['rss_pages'] for x in tree.values())
                           * self.page_size / 1024 ** 2)
             self.previous_tree = tree
         self.previous_time = now
         return result
+
+
+def finite_number(value):
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
 
 
 def render_report(log):
@@ -177,31 +222,44 @@ def render_report(log):
     runs = {}
     metadata = {}
     reason = 'still running or interrupted without a final record'
-    with log.open() as stream:
+    skipped = warnings = 0
+    with log.open(errors='replace') as stream:
         for line in stream:
             try:
                 row = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
+                skipped += 1
                 continue  # Allow reports while the last line is being written.
+            if not isinstance(row, dict):
+                skipped += 1
+                continue
             if row.get('type') == 'metadata':
                 metadata = row
             elif row.get('type') == 'end':
-                reason = row['reason']
+                reason = row.get('reason', 'unknown')
             elif row.get('type') == 'sample':
+                elapsed, weight = row.get('elapsed_seconds'), row.get('interval_seconds')
+                if (not finite_number(elapsed) or not finite_number(weight)
+                        or elapsed < 0 or weight < 0 or not isinstance(row.get('resources'), dict)):
+                    skipped += 1
+                    continue
                 count += 1
-                duration = row['elapsed_seconds']
-                weight = row['interval_seconds']
+                duration = max(duration, elapsed)
+                warnings += len(row['warnings']) if isinstance(row.get('warnings'), list) else 0
                 for name, value in row['resources'].items():
-                    if value is None:
+                    if not finite_number(value):
                         continue
                     item = aggregates.setdefault(name, [0, 0, value, value])
                     item[0] += value * weight
                     item[1] += weight
                     item[2] = min(item[2], value)
                     item[3] = max(item[3], value)
-                runs.update(row['runs'])
+                if isinstance(row.get('runs'), dict):
+                    runs.update({name: state for name, state in row['runs'].items()
+                                 if isinstance(state, dict)})
     lines = ['# RCWM performance report', '', f"Target: `{metadata.get('target', '?')}`",
              f"Samples: {count}; observed duration: {duration / 60:.2f} minutes; stop: {reason}.",
+             f'Skipped malformed/incomplete records: {skipped}; recorded sampling warnings: {warnings}.',
              '', '| Resource | Time-weighted mean | Minimum | Maximum |',
              '|---|---:|---:|---:|']
     for name, (total, weight, low, high) in aggregates.items():
@@ -211,9 +269,9 @@ def render_report(log):
               '| Run (relative path) | Sessions started / ended | Peak active in trace | Active at last sample | Root stopped | Unread bytes |',
               '|---|---:|---:|---:|---|---:|']
     for run, state in sorted(runs.items()):
-        lines.append(f"| {run} | {state['session_starts']} / {state['session_ends']} | "
-                     f"{state['trace_peak_active']} | {state['active_sessions']} | "
-                     f"{state['root_stopped']} | {state['unread_bytes']} |")
+        lines.append(f"| {run} | {state.get('session_starts', '?')} / {state.get('session_ends', '?')} | "
+                     f"{state.get('trace_peak_active', '?')} | {state.get('active_sessions', '?')} | "
+                     f"{state.get('root_stopped', '?')} | {state.get('unread_bytes', '?')} |")
     lines += ['', '## Interpretation and limits', '',
               '- Host CPU percentages cover the whole machine, including unrelated workloads. '
               f"Logical CPUs reported: {metadata.get('logical_cpus', '?')}.",
@@ -228,6 +286,8 @@ def render_report(log):
               '- Sustained host CPU saturation or low available memory suggests local contention. '
               'Low CPU during active sessions is consistent with remote/tool waiting, but does not '
               'prove API throttling. This tool measures no provider latency, GPU utilization, or tokens.',
+              '- Missing resource readings are null, not zero. Sampling warnings are recorded in the JSONL; '
+              'transient read failures do not stop monitoring.',
               '- Resource statistics cover only the monitoring window; first-sample CPU is unavailable. '
               'A root stop event does not establish successful delivery.', '']
     return '\n'.join(lines)
@@ -239,7 +299,7 @@ def watch(args):
     target = args.target.resolve()
     if not target.is_dir():
         raise ValueError(f'not a directory: {target}')
-    identity = process_stat(args.pid) if args.pid else None
+    identity = process_stat(args.pid, strict=True) if args.pid else None
     if args.pid and (not identity or identity['state'] == 'Z'):
         raise ValueError(f'PID {args.pid} is not running')
     log = args.output or target / (datetime.now(timezone.utc).strftime('performance-%Y%m%dT%H%M%S')
@@ -250,55 +310,92 @@ def watch(args):
     report = log.with_suffix('.md')
     if report.exists():
         raise ValueError(f'report already exists: {report}')
-    stop = threading.Event()
+    stop_requested = False
+
+    def request_stop(*_):
+        # Signal handlers must not acquire threading locks.
+        nonlocal stop_requested
+        stop_requested = True
+
     for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, lambda *_: stop.set())
+        signal.signal(sig, request_stop)
     resources = Resources(args.pid)
     tails = {}
     start = previous = time.monotonic()
     reason = 'signal'
-    with log.open('x', buffering=1) as stream:
-        def emit(row):
-            stream.write(json.dumps(row, allow_nan=False) + '\n')
-        emit(dict(type='metadata', schema_version=1, ts=timestamp(), target=str(target),
-                  watched_pid=args.pid, interval_seconds=args.interval,
-                  logical_cpus=os.cpu_count()))
-        print(f'Performance log: {log}', flush=True)
-        try:
-            while True:
-                now = time.monotonic()
-                runs = {}
-                for path in trace_paths(target):
-                    state = tails.setdefault(path, TraceTail()).poll(path)
-                    if state is not None:
-                        runs[str(path.parent.parent.relative_to(target))] = state
-                usage = resources.sample(now)
-                usage['monitor_sample_ms'] = (time.monotonic() - now) * 1000
-                emit(dict(type='sample', ts=timestamp(), elapsed_seconds=now - start,
-                          interval_seconds=now - previous, resources=usage, runs=runs))
-                previous = now
-                current = process_stat(args.pid) if args.pid else None
-                if args.pid and (not current or current['state'] == 'Z'
-                                 or current['start'] != identity['start']):
-                    reason = 'watched process exited'
-                    break
-                if args.duration and now - start >= args.duration:
-                    reason = 'duration reached'
-                    break
-                if stop.is_set():
-                    break
-                delay = args.interval
-                if args.duration:
-                    delay = min(delay, max(0, args.duration - (time.monotonic() - start)))
-                stop.wait(delay)
-        except BaseException:
-            reason = 'monitor error'
-            raise
-        finally:
-            emit(dict(type='end', ts=timestamp(), reason=reason))
-    with report.open('x') as output:
-        output.write(render_report(log))
-    print(f'Performance report: {report}', flush=True)
+    created = False
+    try:
+        with log.open('x', buffering=1) as stream:
+            created = True
+            def emit(row):
+                stream.write(json.dumps(row, allow_nan=False) + '\n')
+            emit(dict(type='metadata', schema_version=1, ts=timestamp(), target=str(target),
+                      watched_pid=args.pid, interval_seconds=args.interval,
+                      logical_cpus=os.cpu_count()))
+            print(f'Performance log: {log}', flush=True)
+            try:
+                while True:
+                    now = time.monotonic()
+                    runs, warnings = {}, []
+                    try:
+                        paths = trace_paths(target)
+                    except OSError as error:
+                        paths = []
+                        warnings.append(f'trace discovery: {error}')
+                    for path in sorted(set(paths) | set(tails)):
+                        state = tails.setdefault(path, TraceTail()).poll(path)
+                        if state is not None:
+                            runs[str(path.parent.parent.relative_to(target))] = state
+                        else:
+                            warnings.append(f'trace unavailable or not a regular file: {path}')
+                    usage = resources.sample(now)
+                    warnings.extend(resources.errors)
+                    exited = False
+                    if args.pid:
+                        try:
+                            current = process_stat(args.pid, strict=True)
+                            exited = (not current or current['state'] == 'Z'
+                                      or current['start'] != identity['start'])
+                        except (OSError, ValueError, IndexError) as error:
+                            warnings.append(f'watched PID temporarily unreadable: {error}')
+                    usage['monitor_sample_ms'] = (time.monotonic() - now) * 1000
+                    emit(dict(type='sample', ts=timestamp(), elapsed_seconds=now - start,
+                              interval_seconds=now - previous, resources=usage, runs=runs, warnings=warnings))
+                    previous = now
+                    if exited:
+                        reason = 'watched process exited'
+                        break
+                    if args.duration and now - start >= args.duration:
+                        reason = 'duration reached'
+                        break
+                    if stop_requested:
+                        break
+                    delay = args.interval
+                    if args.duration:
+                        delay = min(delay, max(0, args.duration - (time.monotonic() - start)))
+                    deadline = time.monotonic() + delay
+                    while not stop_requested and time.monotonic() < deadline:
+                        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+            except BaseException:
+                reason = 'monitor error'
+                raise
+            finally:
+                emit(dict(type='end', ts=timestamp(), reason=reason))
+    finally:
+        # Even if sampling or writing fails, summarize every intact record already on disk.
+        # Never touch an existing log when exclusive creation itself failed.
+        if created:
+            sampling_failed = sys.exc_info()[0] is not None
+            try:
+                summary = render_report(log)
+                with report.open('x') as output:
+                    output.write(summary)
+                print(f'Performance report: {report}', flush=True)
+            except OSError as error:
+                print(f'Could not write performance report: {error}; retained log: {log}',
+                      file=sys.stderr, flush=True)
+                if not sampling_failed:
+                    raise
 
 
 def positive(value):

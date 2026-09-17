@@ -243,6 +243,22 @@ attachment; resource samples cover only the monitoring window. Abruptly terminat
 session-end events, so active counts can be stale. A root stop is not proof
 of successful delivery. A killed monitor's existing JSONL can still be summarized with `report`.
 
+Robustness: transient resource-read failures produce `null` measurements and warnings, then are
+retried on the next sample. Unreadable traces are retried; incomplete lines are buffered, and malformed
+records are skipped. Replaced/truncated trace files reset their counters. Unreadable watched-PID data
+is reported as a warning rather than assumed to mean the batch exited. Reporting tolerates damaged
+or incomplete JSONL records and states how many were skipped. Fatal sampling/write errors stop only
+the monitor; it attempts a report from intact records. A full disk may prevent both further logging
+and report creation, so check `monitor-console.log` for errors. The experiment is never signalled.
+
+The monitor has synthetic tests for four sequential runs with parallel children, partial writes,
+trace replacement, missing resource readings, PID reuse, signal handling and injected write failures.
+These exercise the actual batch layout without model calls or rendering:
+
+```bash
+python3 -m unittest discover -s tests -p test_performance_monitor.py -v
+```
+
 **Score.** With the metrics packages installed (`--metrics`), one JSON line with the chosen final render, PSNR / SSIM /
 edge-F1 / LPIPS / CLIP against the reference, nodes, depth, nodes per level, delivered parts, tokens and wall time:
 
